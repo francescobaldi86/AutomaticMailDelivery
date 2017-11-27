@@ -1,6 +1,7 @@
 import httplib2
 import os
 import io
+import csv
 
 from apiclient.discovery import build
 from apiclient.http import MediaIoBaseDownload
@@ -16,7 +17,7 @@ except ImportError:
 
 # If modifying these scopes, delete your previously saved credentials
 # at ~/.credentials/drive-python-quickstart.json
-SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Drive API Python Quickstart'
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -77,6 +78,11 @@ def main():
         while done is False:
             status, done = downloader.next_chunk()
             print("Download " + str(int(status.progress() * 100)) + '%')
+        csvContent = fh.getvalue().decode("utf-8")
+        f = io.StringIO(csvContent)
+        reader = csv.reader(f, delimiter=',')
+        for row in reader:
+            print('\t'.join(row))
 
 
 if __name__ == '__main__':

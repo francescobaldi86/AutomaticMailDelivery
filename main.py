@@ -1,8 +1,9 @@
-from __future__ import print_function
 import httplib2
 import os
+import io
 
-from apiclient import discovery
+from apiclient.discovery import build
+from apiclient.http import MediaIoBaseDownload
 from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
@@ -57,7 +58,7 @@ def main():
     """
     credentials = get_credentials()
     http = credentials.authorize(httplib2.Http())
-    service = discovery.build('drive', 'v3', http=http)
+    service = build('drive', 'v3', http=http)
 
     results = service.files().list(
         pageSize=10,fields="nextPageToken, files(id, name)").execute()
@@ -67,7 +68,16 @@ def main():
     else:
         print('Files:')
         for item in items:
-            print('{0} ({1})'.format(item['name'], item['id']))
+            if item['name'] == 'IPESE Afterlunch Seminars Planning':
+                fileId = item['id']
+        request = service.files().export_media(fileId=fileId, mimeType='text/csv')
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            print("Download " + str(int(status.progress() * 100)) + '%')
+
 
 if __name__ == '__main__':
     main()

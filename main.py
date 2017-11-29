@@ -2,12 +2,15 @@ import httplib2
 import os
 import io
 import csv
+import datetime
+import calendar
 
 from apiclient.discovery import build
 from apiclient.http import MediaIoBaseDownload
 from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
+import win32com.client as win32
 
 try:
     import argparse
@@ -51,18 +54,10 @@ def get_credentials():
         print('Storing credentials to ' + credential_path)
     return credentials
 
-def main():
-    """Shows basic usage of the Google Drive API.
 
-    Creates a Google Drive API service object and outputs the names and IDs
-    for up to 10 files.
-    """
-    credentials = get_credentials()
-    http = credentials.authorize(httplib2.Http())
-    service = build('drive', 'v3', http=http)
-
+def download_file(service):
     results = service.files().list(
-        pageSize=10,fields="nextPageToken, files(id, name)").execute()
+        pageSize=10, fields="nextPageToken, files(id, name)").execute()
     items = results.get('files', [])
     if not items:
         print('No files found.')
@@ -71,18 +66,123 @@ def main():
         for item in items:
             if item['name'] == 'IPESE Afterlunch Seminars Planning':
                 fileId = item['id']
-        request = service.files().export_media(fileId=fileId, mimeType='text/csv')
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-            print("Download " + str(int(status.progress() * 100)) + '%')
-        csvContent = fh.getvalue().decode("utf-8")
-        f = io.StringIO(csvContent)
-        reader = csv.reader(f, delimiter=',')
-        for row in reader:
-            print('\t'.join(row))
+    return (items, fileId)
+
+
+def read_file(service, fileId):
+    request = service.files().export_media(fileId=fileId, mimeType='text/csv')
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+        print("Download " + str(int(status.progress() * 100)) + '%')
+    csvContent = fh.getvalue().decode("utf-8")
+    f = io.StringIO(csvContent)
+    reader = csv.reader(f, delimiter=',')
+    output = {}
+    output["Dates"] = []
+    output["Presenter Names"] = []
+    output["Presentation Titles"] = []
+    for row in reader:
+        if row[1][:2] == '20':
+            output["Presenter Names"].append(row[0])
+            output["Dates"].append(row[1])
+            output["Presentation Titles"].append(row[2])
+    return output
+
+
+def find_date(orderedList):
+    tomorrowDate =  str(datetime.date.today() + datetime.timedelta(days=1))
+    sendMailDecision = False
+    counter = 0
+    idEvent = ''
+    for presentationDate in orderedList["Dates"]:
+        if presentationDate ==tomorrowDate:
+            sendMailDecision = True
+            idEvent = counter
+        counter = counter + 1
+    if sendMailDecision:
+        with open('mail_sent.csv', 'r') as csvfile:
+            mailSentCheck = csv.reader(csvfile)
+            for row in mailSentCheck:
+                if len(row) == 2:
+                    if (row[0] == tomorrowDate) & (row[1] == 'sent'):
+                        sendMailDecision = False
+                    else:
+                        continue
+    if sendMailDecision:
+        with open('mail_sent.csv', 'w') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=',')
+            csvwriter.writerow([tomorrowDate, 'sent'])
+    return (sendMailDecision, idEvent)
+
+def ord(n):
+    return str(n)+("th" if 4<=n%100<=20 else {1:"st",2:"nd",3:"rd"}.get(n%10, "th"))
+
+
+def write_mail(orderedList, idEvent):
+    # This
+    presenterName = orderedList["Presenter Names"][idEvent]
+    date = orderedList["Dates"][idEvent]
+    day = ord(int(date[-2:]))
+    monthN = int(date[-5:-3])
+    month = calendar.month_name[monthN]
+    presentationTitle = orderedList["Presentation Titles"][idEvent]
+    mailBody = "Hi everyone, \n it’s time again for an afterlunch IPESE seminar. It will take place tomorrow, the "
+    mailBody = mailBody + day + " of " + month
+    mailBody = mailBody + " at 13 in Emosson, as usual. Presenting this time will be "
+    mailBody = mailBody + presenterName
+    mailBody = mailBody + " who will talk about "
+    mailBody = mailBody + presentationTitle + ".\n\n"
+    mailBody = mailBody + "Have a nice week to everyone \n\n"
+    mailBody = mailBody + "PhD Francesco Baldi \n"
+    mailBody = mailBody + "Postdoctoral Researcher \n"
+    mailBody = mailBody + "Industrial Processes and Energy Systems engineering (IPESE) \n"
+    mailBody = mailBody + "École Polytechnique Fédérale de Lausanne (EPFL) \n"
+    mailBody = mailBody + "Tel: +41 21 69 58277 \n"
+    mailBody = mailBody + "Mail: Francesco.baldi@epfl.ch \n"
+    return mailBody
+
+
+def send_mail(destinationAddress, mailSubject, mailBody):
+    outlook = win32.Dispatch('outlook.application')
+    mail = outlook.CreateItem(0)
+    mail.To = destinationAddress
+    mail.Subject = mailSubject
+    mail.Body = mailBody
+    # mail.HTMLBody = '<h2>HTML Message body</h2>'  # this field is optional
+    mail.Send()
+
+def main():
+    """Shows basic usage of the Google Drive API.
+
+    Creates a Google Drive API service object and outputs the names and IDs
+    for up to 10 files.
+    """
+    # First some info about the email to write
+    # destinationAddress = "ipese@groups.epfl.ch"
+    destinationAddress = "stefano.moret@epfl.ch"
+    destinationAddress = "francesco.baldi@epfl.ch"
+    mailSubject = "Next IPESE After-lunch seminar - AUTOMATIC MAIL TEST"
+    # Getting the required credentials
+    credentials = get_credentials()
+    http = credentials.authorize(httplib2.Http())
+    service = build('drive', 'v3', http=http)
+    # Downloading the file
+    (items, fileId) = download_file(service)
+    orderedList = read_file(service, fileId)
+    (sendMailDecision, idEvent) = find_date(orderedList)
+    if sendMailDecision:
+        print("Tomorrow there is going to be an IPESE seminar")
+        mailBody = write_mail(orderedList, idEvent)
+        send_mail(destinationAddress, mailSubject, mailBody)
+        print("Email sent")
+    else:
+        print("No seminar tomorrow. No email has been sent")
+
+
+
 
 
 if __name__ == '__main__':

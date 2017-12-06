@@ -4,6 +4,7 @@ import io
 import csv
 import datetime
 import calendar
+import logging
 
 from apiclient.discovery import build
 from apiclient.http import MediaIoBaseDownload
@@ -155,31 +156,31 @@ def send_mail(destinationAddress, mailSubject, mailBody):
     mail.Send()
 
 def main():
-    """Shows basic usage of the Google Drive API.
-
-    Creates a Google Drive API service object and outputs the names and IDs
-    for up to 10 files.
-    """
+    logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename='log.log', level=logging.DEBUG)
+    logging.info('The program successfully started')
     # First some info about the email to write
-    # destinationAddress = "ipese@groups.epfl.ch"
-    destinationAddress = "stefano.moret@epfl.ch"
+    # destinationAddress = "ipese@groupes.epfl.ch"
+    # destinationAddress = "stefano.moret@epfl.ch"
     destinationAddress = "francesco.baldi@epfl.ch"
     mailSubject = "Next IPESE After-lunch seminar - AUTOMATIC MAIL TEST"
     # Getting the required credentials
     credentials = get_credentials()
+    logging.info('get_credentials executed successfully')
     http = credentials.authorize(httplib2.Http())
     service = build('drive', 'v3', http=http)
     # Downloading the file
     (items, fileId) = download_file(service)
+    logging.info('Destination file downloaded successfully')
     orderedList = read_file(service, fileId)
     (sendMailDecision, idEvent) = find_date(orderedList)
+    logging.info('Date find completed, with decision: %s', str(sendMailDecision))
     if sendMailDecision:
-        print("Tomorrow there is going to be an IPESE seminar")
+        logging.info('There will be a seminar tomorrow')
         mailBody = write_mail(orderedList, idEvent)
         send_mail(destinationAddress, mailSubject, mailBody)
-        print("Email sent")
+        logging.info('Email sent')
     else:
-        print("No seminar tomorrow. No email has been sent")
+        logging.info("No seminar tomorrow. No email has been sent")
 
 
 
